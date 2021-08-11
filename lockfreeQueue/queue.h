@@ -14,7 +14,7 @@ namespace lockfree
     template <typename T>
     struct Node
     {
-        std::atomic<Node<T>*> next;
+        Node<T>* next;
         T value;
     }__attribute__ ((aligned(8)));
 
@@ -49,10 +49,10 @@ namespace lockfree
                     head.compare_exchange_strong(pHead,topNode);
                 */
                 ///////////////////<optimize>///////////////////////////
-                Node<T>* loadedHead=head.load();
-                Node<T>* loadedTop=loadedHead->next.load();
-                Node<T>* loadedTail=tail.load();
-                if(loadedHead==head.load())//check head is fresh
+                Node<T>* loadedHead=std::atomic_load(head);
+                Node<T>* loadedTop=std::atomic_load(loadedHead->next);
+                Node<T>* loadedTail=std::atomic_load(tail);
+                if(loadedHead==std::atomic_load(head))//check head is fresh
                 {
                     if(loadedHead==loadedTail)
                     {
@@ -64,12 +64,12 @@ namespace lockfree
                         else//!!!! we must make sure tail is behind head!!!!
                         //otherwise tail node will pop and may be free().
                         {
-                            tail.compare_exchange_strong(loadedTail,loadedTop);
+                            std::atomic_compare_exchange_weak(tail,loadedTail,loadedTop);
                         }
                     }
                     else
                     {
-                        succeed=head.compare_exchange_strong(loadedHead,loadedTop);
+                        succeed=std::atomic_compare_exchange_weak(head,loadedHead,loadedTop);
                     }
                 }
 
@@ -81,27 +81,28 @@ namespace lockfree
             bool succeed=false;
             while(!succeed)
             {
-                Node<T>* loadedTail=tail.load();
-                Node<T>* loadedTailNext=loadedTail->next.load();
-                if(loadedTail==tail.load())//<optimize>check loadedTail is fresh
+                Node<T>* loadedTail=std::atomic_load(tail);
+                Node<T>* loadedTailNext=std::atomic_load(loadedTail->next);
+                if(loadedTail==std::atomic_load(tail))//<optimize>check loadedTail is fresh
                     if(loadedTailNext==nullptr)
                         //loadedTail is real tail
                         //it may be changed by other threads push().
                         //so it needs CAS to check again.
-                        succeed=loadedTail->next.compare_exchange_strong(nullptr,n);
+                        succeed=std::atomic_compare_exchange_weak(loadedTail->next,nullptr,n);
                     else
                         //if the loaded tail do not have a null nextpointer
                         //the nextpointer will not be changed currently because push/pop only happen
                         //in front/tail. And now the loaded tail is not the real tail.
-                        tail.compare_exchange_strong(loadedTail,loadedTailNext);
+                        std::atomic_compare_exchange_weak(tail,loadedTail,loadedTailNext);
             }
-            tail.compare_exchange_strong(loadedTail,n);//push() success! try to update tail;
+            //push() success! try to update tail;
+            std::atomic_compare_exchange_weak(tail,loadedTail,n);
             //CAS * 1 * LOOP + CAS * 1
             //LOAD * 3 * LOOP
         }
         private:
-        std::atomic<Node<T>*> head;//head point to a proxy node which is not the real top node.
-        std::atomic<Node<T>*> tail;
+        Node<T>* head;//head point to a proxy node which is not the real top node.
+        Node<T>* tail;
 
     };
 }
