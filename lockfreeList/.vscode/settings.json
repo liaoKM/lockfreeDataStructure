@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "atomic": "cpp",
+        "type_traits": "cpp",
+        "cstdint": "cpp"
+    }
+}
